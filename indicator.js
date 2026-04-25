@@ -308,12 +308,9 @@ class PopupCard extends PopupMenu.PopupBaseMenuItem {
     }
 
     setVolumeEnabled(enabled) {
-        this._volumeSlider.reactive = enabled;
-        this._volumeSlider.can_focus = enabled;
-        this._volumeSlider.opacity = enabled ? 255 : 100;
-        this._volIcon.opacity = enabled ? 255 : 100;
-        if (!enabled)
-            this._volIcon.icon_name = 'audio-volume-muted-symbolic';
+        const row = this._volumeSlider.get_parent();
+        if (row)
+            row.visible = enabled;
     }
 
     update(metadata, playbackStatus, positionMicros, volume) {
@@ -436,7 +433,7 @@ class YTMusicIndicator extends PanelMenu.Button {
             player.onVolumeChanged = (vol) => this._card.setVolume(vol);
         }
 
-        this._card.setVolumeEnabled(true);
+        this._card.setVolumeEnabled(player ? !player.isBrowserPlayer : false);
         this._refresh();
         this._startProgressTimer();
     }

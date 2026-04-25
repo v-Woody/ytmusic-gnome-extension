@@ -10,6 +10,21 @@ const IGNORED_BUS_PATTERNS = [
     'kdeconnect',
 ];
 
+// Bus name fragments that identify browser-based players.
+// Browsers expose MPRIS but ignore volume writes, so volume control
+// is hidden for these players.
+export const BROWSER_BUS_PATTERNS = [
+    'brave',
+    'chrome',
+    'chromium',
+    'firefox',
+    'microsoft-edge',
+    'webkit',
+    'epiphany',
+    'opera',
+    'vivaldi',
+];
+
 // ---------------------------------------------------------------------------
 // Async D-Bus helpers
 // ---------------------------------------------------------------------------
@@ -237,6 +252,11 @@ export class MprisPlayer {
     get canGoPrevious()   { return this._canGoPrevious; }
     get identity()        { return this._identity; }
     get busName()         { return this._busName; }
+
+    get isBrowserPlayer() {
+        const lower = this._busName.toLowerCase();
+        return BROWSER_BUS_PATTERNS.some(p => lower.includes(p));
+    }
 }
 
 // ---------------------------------------------------------------------------
