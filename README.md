@@ -55,7 +55,7 @@ Make sure youtube-music is running before enabling the extension.
 
 ```
 ytmusic-gnome-extension/
-  extension.js        Main entry point — wires watcher, indicator, media keys
+  extension.js        Main entry point. Wires watcher, indicator, media keys
   indicator.js        Panel button and popup card UI
   mpris.js            MPRIS D-Bus watcher and player proxy
   prefs.js            Preferences window (Adwaita)

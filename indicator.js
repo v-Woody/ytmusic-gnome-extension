@@ -14,7 +14,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const MARQUEE_SPEED = 40;         // pixels per second
 const MARQUEE_PAUSE_MS = 2000;    // pause at each end before scrolling back
-const MAX_TITLE_WIDTH = 200;      // px — clips title before scrolling kicks in
+const MAX_TITLE_WIDTH = 200;      // px, clips title before scrolling kicks in
 const PROGRESS_UPDATE_MS = 1000;  // how often we refresh the progress bar
 const ART_SIZE = 80;              // album art size in px
 
@@ -137,7 +137,7 @@ class ProgressBar extends St.Widget {
 });
 
 // ---------------------------------------------------------------------------
-// PopupCard — the dropdown menu content
+// PopupCard: the dropdown menu content
 // ---------------------------------------------------------------------------
 
 const PopupCard = GObject.registerClass(
@@ -282,7 +282,7 @@ class PopupCard extends PopupMenu.PopupBaseMenuItem {
 });
 
 // ---------------------------------------------------------------------------
-// YTMusicIndicator — the panel button
+// YTMusicIndicator: the panel button
 // ---------------------------------------------------------------------------
 
 export const YTMusicIndicator = GObject.registerClass(
