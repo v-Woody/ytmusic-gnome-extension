@@ -1,9 +1,8 @@
 {
   "name": "YouTube Music Controls",
-  "description": "Control YouTube Music from your GNOME panel. Shows track info, album art, and playback controls.",
-  "uuid": "ytmusic-controls@v-Woody",
-  "version": 1,
-  "shell-version": ["45", "46", "47"],
+  "description": "Control YouTube Music from your GNOME panel. Shows track info, album art, and playback controls.\n\nWorks with YouTube Music in any browser (Brave, Chrome, Firefox, Edge) as well as the youtube-music desktop app.",
+  "uuid": "ytmusic-controls@v-Woody.github.io",
+  "shell-version": ["45", "46", "47", "48"],
   "url": "https://github.com/v-Woody/ytmusic-gnome-extension",
   "settings-schema": "org.gnome.shell.extensions.ytmusic-controls"
 }
