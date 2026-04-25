@@ -434,15 +434,9 @@ class YTMusicIndicator extends PanelMenu.Button {
             player.onMetadataChanged = () => this._refresh();
             player.onPlaybackStatusChanged = () => this._refresh();
             player.onVolumeChanged = (vol) => this._card.setVolume(vol);
-
-            // Probe whether this player supports volume control
-            player.probeVolumeControl().then(supported => {
-                this._card.setVolumeEnabled(supported);
-            }).catch(() => this._card.setVolumeEnabled(false));
-        } else {
-            this._card.setVolumeEnabled(false);
         }
 
+        this._card.setVolumeEnabled(true);
         this._refresh();
         this._startProgressTimer();
     }

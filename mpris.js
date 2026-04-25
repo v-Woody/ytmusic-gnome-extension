@@ -201,31 +201,6 @@ export class MprisPlayer {
         this._volume = clamped;
     }
 
-    // Probe whether this player actually honours volume writes.
-    // Chromium-based browsers and Firefox silently ignore them.
-    async probeVolumeControl() {
-        const original = this._volume;
-        // Write a slightly different value and read it back
-        const probe = original > 0.05 ? original - 0.04 : original + 0.04;
-        this.setVolume(probe);
-        await new Promise(r => GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => { r(); return GLib.SOURCE_REMOVE; }));
-        try {
-            const val = await getProperty(
-                this._busName,
-                '/org/mpris/MediaPlayer2',
-                'org.mpris.MediaPlayer2.Player',
-                'Volume'
-            );
-            const changed = Math.abs((val ?? original) - probe) < 0.02;
-            // Restore original
-            this.setVolume(original);
-            return changed;
-        } catch (_e) {
-            this.setVolume(original);
-            return false;
-        }
-    }
-
     raise() {
         Gio.DBus.session.call(
             this._busName,
