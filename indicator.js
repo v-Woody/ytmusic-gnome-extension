@@ -14,7 +14,6 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 // Promisify Gio async file loading
 Gio._promisify(Gio.File.prototype, 'load_contents_async', 'load_contents_finish');
-Gio._promisify(GdkPixbuf.Pixbuf, 'new_from_stream_at_scale_async', 'new_from_stream_at_scale_finish');
 
 const MARQUEE_SPEED = 40;         // pixels per second
 const MARQUEE_PAUSE_MS = 2000;    // pause at each end before scrolling back
@@ -78,14 +77,14 @@ class AlbumArt extends St.Bin {
 
         try {
             const file = Gio.File.new_for_uri(url);
-
-            // Load raw bytes
             const [contents] = await file.load_contents_async(null);
-            const bytes = GLib.Bytes.new(contents);
 
-            // Decode into pixbuf via async stream
-            const stream = Gio.MemoryInputStream.new_from_bytes(bytes);
-            const pixbuf = await GdkPixbuf.Pixbuf.new_from_stream_at_scale_async(
+            const stream = Gio.MemoryInputStream.new_from_bytes(
+                GLib.Bytes.new(contents)
+            );
+
+            // Synchronous decode is fine — bytes are already in memory
+            const pixbuf = GdkPixbuf.Pixbuf.new_from_stream_at_scale(
                 stream, ART_SIZE, ART_SIZE, true, null
             );
 
@@ -94,7 +93,6 @@ class AlbumArt extends St.Bin {
                 return;
             }
 
-            // Build a Clutter.Image and display it
             const image = new Clutter.Image();
             image.set_bytes(
                 pixbuf.get_pixels(),
