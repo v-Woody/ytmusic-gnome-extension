@@ -217,6 +217,11 @@ export class MprisPlayer {
     }
 
     raise() {
+        if (this.isBrowserPlayer) {
+            // Browsers set CanRaise=false and ignore Raise(). Open the URL directly.
+            Gio.AppInfo.launch_default_for_uri('https://music.youtube.com', null);
+            return;
+        }
         Gio.DBus.session.call(
             this._busName,
             '/org/mpris/MediaPlayer2',
