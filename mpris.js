@@ -3,279 +3,279 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-const MPRIS_IFACE = `
-<node>
-  <interface name="org.mpris.MediaPlayer2.Player">
-    <method name="PlayPause"/>
-    <method name="Play"/>
-    <method name="Pause"/>
-    <method name="Stop"/>
-    <method name="Next"/>
-    <method name="Previous"/>
-    <method name="Seek">
-      <arg type="x" direction="in" name="Offset"/>
-    </method>
-    <method name="SetPosition">
-      <arg type="o" direction="in" name="TrackId"/>
-      <arg type="x" direction="in" name="Position"/>
-    </method>
-    <property name="PlaybackStatus" type="s" access="read"/>
-    <property name="Metadata" type="a{sv}" access="read"/>
-    <property name="Volume" type="d" access="readwrite"/>
-    <property name="Position" type="x" access="read"/>
-    <property name="CanGoNext" type="b" access="read"/>
-    <property name="CanGoPrevious" type="b" access="read"/>
-    <property name="CanPlay" type="b" access="read"/>
-    <property name="CanPause" type="b" access="read"/>
-    <property name="CanSeek" type="b" access="read"/>
-    <signal name="Seeked">
-      <arg type="x" name="Position"/>
-    </signal>
-  </interface>
-</node>`;
-
-const MPRIS_ROOT_IFACE = `
-<node>
-  <interface name="org.mpris.MediaPlayer2">
-    <method name="Raise"/>
-    <method name="Quit"/>
-    <property name="Identity" type="s" access="read"/>
-    <property name="DesktopEntry" type="s" access="read"/>
-  </interface>
-</node>`;
-
-const DBUS_IFACE = `
-<node>
-  <interface name="org.freedesktop.DBus">
-    <method name="ListNames">
-      <arg type="as" direction="out" name="names"/>
-    </method>
-    <signal name="NameOwnerChanged">
-      <arg type="s" name="name"/>
-      <arg type="s" name="oldOwner"/>
-      <arg type="s" name="newOwner"/>
-    </signal>
-  </interface>
-</node>`;
-
-// Known bus name fragments for youtube-music desktop app and browser players
-const YTMUSIC_BUS_PATTERNS = [
-    'YoutubeMusic',
-    'youtube-music',
-    'YouTube Music',
-    'youtubemusic',
+// Identity strings and bus name fragments that indicate YouTube Music
+// regardless of which browser is hosting it.
+const YTMUSIC_IDENTITY_PATTERNS = [
+    'youtube music',
 ];
 
-const PlayerProxy = Gio.DBusProxy.makeProxyWrapper(MPRIS_IFACE);
-const RootProxy = Gio.DBusProxy.makeProxyWrapper(MPRIS_ROOT_IFACE);
-const DBusProxy = Gio.DBusProxy.makeProxyWrapper(DBUS_IFACE);
+const YTMUSIC_BUS_PATTERNS = [
+    'youtubemusic',
+    'youtube-music',
+    'youtube_music',
+];
+
+// Bus names that are never music players (system services, etc.)
+const IGNORED_BUS_PATTERNS = [
+    'gnome.settings',
+    'kdeconnect',
+];
+
+// ---------------------------------------------------------------------------
+// Async D-Bus helpers
+// ---------------------------------------------------------------------------
+
+function dbusCall(busName, objectPath, iface, method, params, signature) {
+    return new Promise((resolve, reject) => {
+        Gio.DBus.session.call(
+            busName,
+            objectPath,
+            iface,
+            method,
+            params ? new GLib.Variant(signature, params) : null,
+            null,
+            Gio.DBusCallFlags.NONE,
+            2000,
+            null,
+            (_conn, res) => {
+                try {
+                    const reply = Gio.DBus.session.call_finish(res);
+                    resolve(reply.recursiveUnpack());
+                } catch (e) {
+                    reject(e);
+                }
+            }
+        );
+    });
+}
+
+function getProperty(busName, objectPath, iface, prop) {
+    return dbusCall(
+        busName, objectPath,
+        'org.freedesktop.DBus.Properties', 'Get',
+        [iface, prop], '(ss)'
+    ).then(result => result[0]);
+}
+
+function getAllProperties(busName, objectPath, iface) {
+    return dbusCall(
+        busName, objectPath,
+        'org.freedesktop.DBus.Properties', 'GetAll',
+        [iface], '(s)'
+    ).then(result => result[0]);
+}
+
+// ---------------------------------------------------------------------------
+// MprisPlayer
+// ---------------------------------------------------------------------------
 
 export class MprisPlayer {
     constructor(busName) {
         this._busName = busName;
-        this._playerProxy = null;
-        this._rootProxy = null;
-        this._propertiesChangedId = null;
-        this._seekedId = null;
+        this._signalId = null;
+        this._metadata = null;
+        this._playbackStatus = 'Stopped';
+        this._position = 0;
+        this._canGoNext = false;
+        this._canGoPrevious = false;
+        this._identity = '';
 
         this.onMetadataChanged = null;
         this.onPlaybackStatusChanged = null;
-        this.onPositionChanged = null;
     }
 
     async init() {
         try {
-            this._playerProxy = new PlayerProxy(
-                Gio.DBus.session,
+            // Load initial properties
+            const props = await getAllProperties(
                 this._busName,
                 '/org/mpris/MediaPlayer2',
-                null
+                'org.mpris.MediaPlayer2.Player'
             );
 
-            this._rootProxy = new RootProxy(
-                Gio.DBus.session,
+            this._applyProps(props);
+
+            // Also grab the player identity
+            try {
+                const rootProps = await getAllProperties(
+                    this._busName,
+                    '/org/mpris/MediaPlayer2',
+                    'org.mpris.MediaPlayer2'
+                );
+                this._identity = rootProps['Identity'] ?? '';
+            } catch (_e) {}
+
+            // Subscribe to PropertiesChanged
+            this._signalId = Gio.DBus.session.signal_subscribe(
                 this._busName,
+                'org.freedesktop.DBus.Properties',
+                'PropertiesChanged',
                 '/org/mpris/MediaPlayer2',
-                null
-            );
-
-            this._propertiesChangedId = this._playerProxy.connect(
-                'g-properties-changed',
+                null,
+                Gio.DBusSignalFlags.NONE,
                 this._onPropertiesChanged.bind(this)
-            );
-
-            this._seekedId = this._playerProxy.connectSignal(
-                'Seeked',
-                (_proxy, _sender, [position]) => {
-                    this.onPositionChanged?.(position);
-                }
             );
 
             return true;
         } catch (e) {
-            logError(e, `MprisPlayer: failed to init ${this._busName}`);
+            logError(e, `MprisPlayer.init: ${this._busName}`);
             return false;
         }
     }
 
     destroy() {
-        if (this._propertiesChangedId && this._playerProxy) {
-            this._playerProxy.disconnect(this._propertiesChangedId);
+        if (this._signalId !== null) {
+            Gio.DBus.session.signal_unsubscribe(this._signalId);
+            this._signalId = null;
         }
-        if (this._seekedId && this._playerProxy) {
-            this._playerProxy.disconnectSignal(this._seekedId);
-        }
-        this._playerProxy = null;
-        this._rootProxy = null;
     }
 
-    _onPropertiesChanged(_proxy, changed, _invalidated) {
-        const props = changed.recursiveUnpack();
-
-        if ('Metadata' in props)
-            this.onMetadataChanged?.(this.metadata);
-
+    _applyProps(props) {
+        if ('Metadata' in props) {
+            const m = props['Metadata'];
+            this._metadata = {
+                title: m['xesam:title'] ?? '',
+                artist: Array.isArray(m['xesam:artist'])
+                    ? m['xesam:artist'].join(', ')
+                    : (m['xesam:artist'] ?? ''),
+                album: m['xesam:album'] ?? '',
+                artUrl: m['mpris:artUrl'] ?? null,
+                length: m['mpris:length'] ?? 0,
+                trackId: m['mpris:trackid'] ?? null,
+            };
+        }
         if ('PlaybackStatus' in props)
-            this.onPlaybackStatusChanged?.(this.playbackStatus);
+            this._playbackStatus = props['PlaybackStatus'];
+        if ('CanGoNext' in props)
+            this._canGoNext = props['CanGoNext'];
+        if ('CanGoPrevious' in props)
+            this._canGoPrevious = props['CanGoPrevious'];
+        if ('Position' in props)
+            this._position = props['Position'];
     }
 
-    // --- Playback controls ---
+    _onPropertiesChanged(_conn, _sender, _path, _iface, _signal, params) {
+        try {
+            const [, changedProps] = params.recursiveUnpack();
+            const hadMetadata = !!this._metadata?.title;
+            this._applyProps(changedProps);
 
-    playPause() {
-        this._playerProxy?.PlayPauseRemote();
+            if ('Metadata' in changedProps)
+                this.onMetadataChanged?.(this._metadata);
+            if ('PlaybackStatus' in changedProps)
+                this.onPlaybackStatusChanged?.(this._playbackStatus);
+        } catch (e) {
+            logError(e, 'MprisPlayer._onPropertiesChanged');
+        }
     }
 
-    next() {
-        this._playerProxy?.NextRemote();
+    // --- Controls ---
+
+    _callPlayer(method) {
+        Gio.DBus.session.call(
+            this._busName,
+            '/org/mpris/MediaPlayer2',
+            'org.mpris.MediaPlayer2.Player',
+            method,
+            null, null,
+            Gio.DBusCallFlags.NONE,
+            -1, null, null
+        );
     }
 
-    previous() {
-        this._playerProxy?.PreviousRemote();
-    }
-
-    seek(offsetMicroseconds) {
-        this._playerProxy?.SeekRemote(offsetMicroseconds);
-    }
-
-    setPosition(trackId, positionMicroseconds) {
-        this._playerProxy?.SetPositionRemote(trackId, positionMicroseconds);
-    }
+    playPause() { this._callPlayer('PlayPause'); }
+    next()      { this._callPlayer('Next'); }
+    previous()  { this._callPlayer('Previous'); }
 
     raise() {
-        this._rootProxy?.RaiseRemote();
+        Gio.DBus.session.call(
+            this._busName,
+            '/org/mpris/MediaPlayer2',
+            'org.mpris.MediaPlayer2',
+            'Raise',
+            null, null,
+            Gio.DBusCallFlags.NONE,
+            -1, null, null
+        );
     }
 
-    // --- Properties ---
-
-    get playbackStatus() {
-        return this._playerProxy?.PlaybackStatus ?? 'Stopped';
-    }
-
-    get isPlaying() {
-        return this.playbackStatus === 'Playing';
-    }
-
-    get metadata() {
-        const raw = this._playerProxy?.Metadata;
-        if (!raw) return null;
-
-        const m = raw.recursiveUnpack();
-        return {
-            title: m['xesam:title'] ?? '',
-            artist: (m['xesam:artist'] ?? []).join(', '),
-            album: m['xesam:album'] ?? '',
-            artUrl: m['mpris:artUrl'] ?? null,
-            length: m['mpris:length'] ?? 0,   // microseconds
-            trackId: m['mpris:trackid'] ?? null,
-        };
-    }
-
-    get position() {
-        // Position is not cached by the proxy; we read it directly
+    // Refresh position on demand (not cached by signal)
+    async refreshPosition() {
         try {
-            const val = this._playerProxy?.get_cached_property('Position');
-            return val ? val.get_int64() : 0;
-        } catch (_e) {
-            return 0;
-        }
+            const val = await getProperty(
+                this._busName,
+                '/org/mpris/MediaPlayer2',
+                'org.mpris.MediaPlayer2.Player',
+                'Position'
+            );
+            this._position = val ?? 0;
+        } catch (_e) {}
     }
 
-    get volume() {
-        return this._playerProxy?.Volume ?? 1.0;
-    }
+    // --- Getters ---
 
-    set volume(v) {
-        if (this._playerProxy)
-            this._playerProxy.Volume = Math.max(0, Math.min(1, v));
-    }
-
-    get canGoNext() {
-        return this._playerProxy?.CanGoNext ?? false;
-    }
-
-    get canGoPrevious() {
-        return this._playerProxy?.CanGoPrevious ?? false;
-    }
-
-    get identity() {
-        return this._rootProxy?.Identity ?? '';
-    }
-
-    get busName() {
-        return this._busName;
-    }
+    get playbackStatus()  { return this._playbackStatus; }
+    get isPlaying()       { return this._playbackStatus === 'Playing'; }
+    get metadata()        { return this._metadata; }
+    get position()        { return this._position; }
+    get canGoNext()       { return this._canGoNext; }
+    get canGoPrevious()   { return this._canGoPrevious; }
+    get identity()        { return this._identity; }
+    get busName()         { return this._busName; }
 }
+
+// ---------------------------------------------------------------------------
+// MprisWatcher
+// ---------------------------------------------------------------------------
 
 export class MprisWatcher {
     constructor() {
-        this._dbusProxy = null;
-        this._nameOwnerChangedId = null;
-        this._players = new Map(); // busName -> MprisPlayer
+        this._players = new Map();
+        this._nameWatcherId = null;
 
         this.onPlayerAdded = null;
         this.onPlayerRemoved = null;
     }
 
     async init() {
-        this._dbusProxy = new DBusProxy(
-            Gio.DBus.session,
+        // Watch for bus name changes
+        this._nameWatcherId = Gio.DBus.session.signal_subscribe(
             'org.freedesktop.DBus',
-            '/org/freedesktop/DBus',
-            null
-        );
-
-        this._nameOwnerChangedId = this._dbusProxy.connectSignal(
+            'org.freedesktop.DBus',
             'NameOwnerChanged',
+            '/org/freedesktop/DBus',
+            null,
+            Gio.DBusSignalFlags.NONE,
             this._onNameOwnerChanged.bind(this)
         );
 
-        // Scan existing names
+        // Scan names already on the bus
         try {
-            const [names] = await new Promise((resolve, reject) => {
-                this._dbusProxy.ListNamesRemote((result, error) => {
-                    if (error) reject(error);
-                    else resolve(result);
-                });
-            });
-
+            const result = await dbusCall(
+                'org.freedesktop.DBus',
+                '/org/freedesktop/DBus',
+                'org.freedesktop.DBus',
+                'ListNames',
+                null, null
+            );
+            const names = result[0];
             for (const name of names) {
-                if (this._isYTMusicBus(name))
+                if (this._isSupportedBus(name))
                     await this._addPlayer(name);
             }
         } catch (e) {
-            logError(e, 'MprisWatcher: failed to list D-Bus names');
+            logError(e, 'MprisWatcher.init');
         }
     }
 
     destroy() {
-        if (this._nameOwnerChangedId && this._dbusProxy)
-            this._dbusProxy.disconnectSignal(this._nameOwnerChangedId);
-
+        if (this._nameWatcherId !== null) {
+            Gio.DBus.session.signal_unsubscribe(this._nameWatcherId);
+            this._nameWatcherId = null;
+        }
         for (const player of this._players.values())
             player.destroy();
-
         this._players.clear();
-        this._dbusProxy = null;
     }
 
     get players() {
@@ -283,26 +283,57 @@ export class MprisWatcher {
     }
 
     get activePlayer() {
-        // Prefer a playing player; fall back to first available
-        for (const p of this._players.values()) {
-            if (p.isPlaying) return p;
-        }
-        return this._players.values().next().value ?? null;
+        const all = [...this._players.values()];
+
+        // 1. A YTMusic player that is currently playing
+        const ytPlaying = all.find(p => this._isYTMusicPlayer(p) && p.isPlaying);
+        if (ytPlaying) return ytPlaying;
+
+        // 2. Any YTMusic player (paused but present)
+        const ytAny = all.find(p => this._isYTMusicPlayer(p));
+        if (ytAny) return ytAny;
+
+        // 3. Any player that is currently playing (fallback for non-YTMusic use)
+        const anyPlaying = all.find(p => p.isPlaying);
+        if (anyPlaying) return anyPlaying;
+
+        // 4. First available player
+        return all[0] ?? null;
     }
 
-    _isYTMusicBus(name) {
+    _isSupportedBus(name) {
         if (!name.startsWith('org.mpris.MediaPlayer2.'))
             return false;
-        const suffix = name.slice('org.mpris.MediaPlayer2.'.length).toLowerCase();
-        return YTMUSIC_BUS_PATTERNS.some(p => suffix.includes(p.toLowerCase()));
+        const lower = name.toLowerCase();
+        return !IGNORED_BUS_PATTERNS.some(p => lower.includes(p.toLowerCase()));
+    }
+
+    // A player is considered YouTube Music if its identity or bus name
+    // matches known patterns, covering the desktop app, PWA installs,
+    // and any browser hosting music.youtube.com.
+    _isYTMusicPlayer(player) {
+        const identity = player.identity.toLowerCase();
+        if (YTMUSIC_IDENTITY_PATTERNS.some(p => identity.includes(p)))
+            return true;
+        const bus = player.busName.toLowerCase();
+        if (YTMUSIC_BUS_PATTERNS.some(p => bus.includes(p)))
+            return true;
+        return false;
     }
 
     async _addPlayer(busName) {
         if (this._players.has(busName)) return;
-
         const player = new MprisPlayer(busName);
         const ok = await player.init();
         if (!ok) return;
+
+        // Re-notify when metadata changes so the indicator can re-evaluate
+        // which player should be active (identity may arrive after init).
+        const origMeta = player.onMetadataChanged;
+        player.onMetadataChanged = (meta) => {
+            origMeta?.(meta);
+            this.onPlayerAdded?.(player);
+        };
 
         this._players.set(busName, player);
         this.onPlayerAdded?.(player);
@@ -311,22 +342,18 @@ export class MprisWatcher {
     _removePlayer(busName) {
         const player = this._players.get(busName);
         if (!player) return;
-
         player.destroy();
         this._players.delete(busName);
         this.onPlayerRemoved?.(busName);
     }
 
-    _onNameOwnerChanged(_proxy, _sender, [name, oldOwner, newOwner]) {
-        if (!name.startsWith('org.mpris.MediaPlayer2.')) return;
-        if (!this._isYTMusicBus(name)) return;
+    _onNameOwnerChanged(_conn, _sender, _path, _iface, _signal, params) {
+        const [name, oldOwner, newOwner] = params.recursiveUnpack();
+        if (!this._isSupportedBus(name)) return;
 
-        if (newOwner && !oldOwner) {
-            // New player appeared
+        if (newOwner && !oldOwner)
             this._addPlayer(name).catch(e => logError(e));
-        } else if (oldOwner && !newOwner) {
-            // Player disappeared
+        else if (oldOwner && !newOwner)
             this._removePlayer(name);
-        }
     }
 }
