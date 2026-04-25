@@ -1,0 +1,116 @@
+/* ============================================================
+   YouTube Music Controls — Stylesheet
+   ============================================================ */
+
+/* Panel label */
+.ytmusic-panel-label {
+    margin-left: 4px;
+    margin-right: 6px;
+}
+
+.ytmusic-panel-icon {
+    margin-right: 2px;
+}
+
+/* Panel control buttons */
+.ytmusic-panel-btn {
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: 0 1px;
+}
+
+.ytmusic-panel-btn:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.ytmusic-panel-btn:active {
+    background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ---- Popup card ---- */
+.ytmusic-card {
+    padding: 12px;
+    min-width: 320px;
+}
+
+.ytmusic-card-top {
+    spacing: 12px;
+    margin-bottom: 10px;
+}
+
+/* Album art */
+.ytmusic-album-art {
+    border-radius: 6px;
+    background-color: rgba(0, 0, 0, 0.3);
+}
+
+.ytmusic-album-art-placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* Track info */
+.ytmusic-card-info {
+    spacing: 4px;
+    padding-left: 4px;
+}
+
+.ytmusic-card-title {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.ytmusic-card-artist {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* Progress bar */
+.ytmusic-progress-row {
+    margin-bottom: 2px;
+}
+
+.ytmusic-progress-container {
+    height: 16px;
+}
+
+.ytmusic-progress-track {
+    height: 4px;
+    border-radius: 2px;
+    background-color: rgba(255, 255, 255, 0.2);
+    margin-top: 6px;
+}
+
+.ytmusic-progress-fill {
+    height: 4px;
+    border-radius: 2px;
+    background-color: #ff0000; /* YouTube red */
+}
+
+/* Time labels */
+.ytmusic-time-row {
+    margin-bottom: 8px;
+}
+
+.ytmusic-time-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* Playback controls in popup */
+.ytmusic-controls {
+    spacing: 16px;
+    padding: 4px 0;
+}
+
+.ytmusic-control-btn {
+    border-radius: 50%;
+    padding: 8px;
+}
+
+.ytmusic-control-btn:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.ytmusic-control-btn:active {
+    background-color: rgba(255, 255, 255, 0.25);
+}

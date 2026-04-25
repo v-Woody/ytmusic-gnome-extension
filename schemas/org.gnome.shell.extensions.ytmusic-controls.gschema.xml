@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.ytmusic-controls"
+          path="/org/gnome/shell/extensions/ytmusic-controls/">
+
+    <key name="show-panel-controls" type="b">
+      <default>true</default>
+      <summary>Show prev/play/next buttons in the panel</summary>
+    </key>
+
+    <key name="show-track-label" type="b">
+      <default>true</default>
+      <summary>Show track name in the panel</summary>
+    </key>
+
+    <key name="max-title-length" type="i">
+      <default>40</default>
+      <range min="10" max="100"/>
+      <summary>Maximum characters shown for track title in panel</summary>
+    </key>
+
+    <key name="panel-position" type="s">
+      <default>'right'</default>
+      <choices>
+        <choice value='left'/>
+        <choice value='center'/>
+        <choice value='right'/>
+      </choices>
+      <summary>Position of the indicator in the panel</summary>
+    </key>
+
+  </schema>
+</schemalist>
