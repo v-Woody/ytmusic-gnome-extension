@@ -113,7 +113,7 @@ class AlbumArt extends St.Bin {
 
             this.child = canvas;
         } catch (e) {
-            logError(e, 'AlbumArt.setUrl');
+            console.error('AlbumArt.setUrl error:', e);
             this._placeholder();
         }
     }
@@ -393,6 +393,10 @@ class YTMusicIndicator extends PanelMenu.Button {
         this._panelPlay.connect('clicked', () => this._player?.playPause());
         this._panelNext.connect('clicked', () => this._player?.next());
 
+        // Apply settings
+        this._applySettings();
+        this._settingsChangedId = this._settings.connect('changed', () => this._applySettings());
+
         // --- Popup card ---
         this._card = new PopupCard();
         this._card.onPlayPause = () => this._player?.playPause();
@@ -407,6 +411,15 @@ class YTMusicIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(this._openItem);
 
         this._refresh();
+    }
+
+    _applySettings() {
+        const showLabel = this._settings.get_boolean('show-track-label');
+        const showControls = this._settings.get_boolean('show-panel-controls');
+        this._panelLabel.visible = showLabel;
+        this._panelPrev.visible = showControls;
+        this._panelPlay.visible = showControls;
+        this._panelNext.visible = showControls;
     }
 
     _makePanelBtn(iconName) {
@@ -478,13 +491,16 @@ class YTMusicIndicator extends PanelMenu.Button {
             GLib.PRIORITY_DEFAULT,
             PROGRESS_UPDATE_MS,
             () => {
-                if (this._player?.isPlaying)
-                    this._card.update(
-                        this._player.metadata,
-                        this._player.playbackStatus,
-                        this._player.position,
-                        this._player.volume
-                    );
+                if (this._player?.isPlaying) {
+                    this._player.refreshPosition().then(() => {
+                        this._card.update(
+                            this._player.metadata,
+                            this._player.playbackStatus,
+                            this._player.position,
+                            this._player.volume
+                        );
+                    }).catch(() => {});
+                }
                 return GLib.SOURCE_CONTINUE;
             }
         );
@@ -499,6 +515,10 @@ class YTMusicIndicator extends PanelMenu.Button {
 
     destroy() {
         this._stopProgressTimer();
+        if (this._settingsChangedId) {
+            this._settings.disconnect(this._settingsChangedId);
+            this._settingsChangedId = null;
+        }
         super.destroy();
     }
 });

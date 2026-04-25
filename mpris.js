@@ -124,7 +124,7 @@ export class MprisPlayer {
 
             return true;
         } catch (e) {
-            logError(e, `MprisPlayer.init: ${this._busName}`);
+            console.error(`MprisPlayer.init error for ${this._busName}:`, e);
             return false;
         }
     }
@@ -174,7 +174,7 @@ export class MprisPlayer {
             if ('Volume' in changedProps)
                 this.onVolumeChanged?.(this._volume);
         } catch (e) {
-            logError(e, 'MprisPlayer._onPropertiesChanged');
+            console.error('MprisPlayer._onPropertiesChanged error:', e);
         }
     }
 
@@ -304,7 +304,7 @@ export class MprisWatcher {
                     await this._addPlayer(name);
             }
         } catch (e) {
-            logError(e, 'MprisWatcher.init');
+            console.error('MprisWatcher.init error:', e);
         }
     }
 
@@ -366,7 +366,7 @@ export class MprisWatcher {
         if (!this._isSupportedBus(name)) return;
 
         if (newOwner && !oldOwner)
-            this._addPlayer(name).catch(e => logError(e));
+            this._addPlayer(name).catch(e => console.error('MprisWatcher._addPlayer error:', e));
         else if (oldOwner && !newOwner)
             this._removePlayer(name);
     }
