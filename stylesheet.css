@@ -86,7 +86,22 @@
     background-color: #ff0000; /* YouTube red */
 }
 
-/* Time labels */
+/* Volume row */
+.ytmusic-volume-row {
+    spacing: 8px;
+    margin-top: 6px;
+    padding: 0 4px;
+}
+
+.ytmusic-volume-icon {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.ytmusic-volume-fill {
+    height: 4px;
+    border-radius: 2px;
+    background-color: rgba(255, 255, 255, 0.85);
+}
 .ytmusic-time-row {
     margin-bottom: 8px;
 }

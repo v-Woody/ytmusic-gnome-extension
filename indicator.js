@@ -234,12 +234,52 @@ class PopupCard extends PopupMenu.PopupBaseMenuItem {
         controls.add_child(this._nextBtn);
         box.add_child(controls);
 
+        // --- Volume row ---
+        const volumeRow = new St.BoxLayout({
+            style_class: 'ytmusic-volume-row',
+            x_expand: true,
+        });
+
+        const volIcon = new St.Icon({
+            icon_name: 'audio-volume-medium-symbolic',
+            icon_size: 16,
+            style_class: 'ytmusic-volume-icon',
+        });
+
+        this._volumeSlider = new St.Widget({
+            style_class: 'ytmusic-progress-container',
+            x_expand: true,
+            reactive: true,
+        });
+        this._volumeTrack = new St.Widget({ style_class: 'ytmusic-progress-track' });
+        this._volumeFill = new St.Widget({ style_class: 'ytmusic-volume-fill' });
+        this._volumeTrack.add_child(this._volumeFill);
+        this._volumeSlider.add_child(this._volumeTrack);
+
+        this._volumeSlider.connect('button-press-event', (_actor, event) => {
+            this._onVolumeClick(event);
+            return Clutter.EVENT_STOP;
+        });
+        this._volumeSlider.connect('motion-event', (_actor, event) => {
+            if (event.get_state() & Clutter.ModifierType.BUTTON1_MASK)
+                this._onVolumeClick(event);
+            return Clutter.EVENT_PROPAGATE;
+        });
+        this._volumeTrack.connect('notify::width', () => this._updateVolumeFill());
+
+        volumeRow.add_child(volIcon);
+        volumeRow.add_child(this._volumeSlider);
+        box.add_child(volumeRow);
+
         this.add_child(box);
 
         // Callbacks wired by extension.js
         this.onPlayPause = null;
         this.onNext = null;
         this.onPrevious = null;
+        this.onVolume = null;
+
+        this._volumeLevel = 1.0;
 
         this._prevBtn.connect('clicked', () => this.onPrevious?.());
         this._playBtn.connect('clicked', () => this.onPlayPause?.());
@@ -260,7 +300,45 @@ class PopupCard extends PopupMenu.PopupBaseMenuItem {
         return btn;
     }
 
-    update(metadata, playbackStatus, positionMicros) {
+    _onVolumeClick(event) {
+        const [absX] = event.get_coords();
+        const [trackX] = this._volumeTrack.get_transformed_position();
+        const trackW = this._volumeTrack.width;
+        if (trackW <= 0) return;
+        const fraction = Math.max(0, Math.min(1, (absX - trackX) / trackW));
+        this._volumeLevel = fraction;
+        this._updateVolumeFill();
+        this.onVolume?.(fraction);
+    }
+
+    _updateVolumeFill() {
+        const w = this._volumeTrack.width;
+        this._volumeFill.width = w * this._volumeLevel;
+    }
+
+    setVolume(level) {
+        this._volumeLevel = Math.max(0, Math.min(1, level));
+        this._updateVolumeFill();
+
+        // Update icon based on level
+        let iconName;
+        if (this._volumeLevel === 0)
+            iconName = 'audio-volume-muted-symbolic';
+        else if (this._volumeLevel < 0.4)
+            iconName = 'audio-volume-low-symbolic';
+        else if (this._volumeLevel < 0.7)
+            iconName = 'audio-volume-medium-symbolic';
+        else
+            iconName = 'audio-volume-high-symbolic';
+
+        // Find the volume icon (first child of volume row)
+        const volumeRow = this._volumeSlider.get_parent();
+        const icon = volumeRow?.get_first_child();
+        if (icon instanceof St.Icon)
+            icon.icon_name = iconName;
+    }
+
+    update(metadata, playbackStatus, positionMicros, volume) {
         if (!metadata) {
             this._titleLabel.text = 'Not playing';
             this._artistLabel.text = '';
@@ -269,6 +347,7 @@ class PopupCard extends PopupMenu.PopupBaseMenuItem {
             this._posLabel.text = '0:00';
             this._durLabel.text = '0:00';
             this._setPlayIcon(false);
+            this.setVolume(1.0);
             return;
         }
 
@@ -283,6 +362,8 @@ class PopupCard extends PopupMenu.PopupBaseMenuItem {
         this._progressBar.setFraction(dur > 0 ? pos / dur : 0);
 
         this._setPlayIcon(playbackStatus === 'Playing');
+        if (volume !== undefined)
+            this.setVolume(volume);
     }
 
     _setPlayIcon(isPlaying) {
@@ -374,6 +455,7 @@ class YTMusicIndicator extends PanelMenu.Button {
         if (player) {
             player.onMetadataChanged = () => this._refresh();
             player.onPlaybackStatusChanged = () => this._refresh();
+            player.onVolumeChanged = (vol) => this._card.setVolume(vol);
         }
 
         this._refresh();
@@ -386,13 +468,14 @@ class YTMusicIndicator extends PanelMenu.Button {
         if (!player) {
             this._panelLabel.text = 'YouTube Music';
             this._setPlayIcon(false);
-            this._card.update(null, 'Stopped', 0);
+            this._card.update(null, 'Stopped', 0, 1.0);
             return;
         }
 
         const meta = player.metadata;
         const status = player.playbackStatus;
         const pos = player.position;
+        const vol = player.volume;
 
         // Panel label: "Artist - Title"
         const title = meta?.title ?? '';
@@ -403,7 +486,7 @@ class YTMusicIndicator extends PanelMenu.Button {
 
         this._panelLabel.text = labelText;
         this._setPlayIcon(status === 'Playing');
-        this._card.update(meta, status, pos);
+        this._card.update(meta, status, pos, vol);
     }
 
     _setPlayIcon(isPlaying) {
@@ -423,7 +506,8 @@ class YTMusicIndicator extends PanelMenu.Button {
                     this._card.update(
                         this._player.metadata,
                         this._player.playbackStatus,
-                        this._player.position
+                        this._player.position,
+                        this._player.volume
                     );
                 return GLib.SOURCE_CONTINUE;
             }

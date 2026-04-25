@@ -3,19 +3,8 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-// Identity strings and bus name fragments that indicate YouTube Music
-// regardless of which browser is hosting it.
-const YTMUSIC_IDENTITY_PATTERNS = [
-    'youtube music',
-];
-
-const YTMUSIC_BUS_PATTERNS = [
-    'youtubemusic',
-    'youtube-music',
-    'youtube_music',
-];
-
-// Bus names that are never music players (system services, etc.)
+// Bus name suffixes that are known to never be music players.
+// Everything else that starts with org.mpris.MediaPlayer2 is tracked.
 const IGNORED_BUS_PATTERNS = [
     'gnome.settings',
     'kdeconnect',
@@ -76,12 +65,14 @@ export class MprisPlayer {
         this._metadata = null;
         this._playbackStatus = 'Stopped';
         this._position = 0;
+        this._volume = 1.0;
         this._canGoNext = false;
         this._canGoPrevious = false;
         this._identity = '';
 
         this.onMetadataChanged = null;
         this.onPlaybackStatusChanged = null;
+        this.onVolumeChanged = null;
     }
 
     async init() {
@@ -152,18 +143,21 @@ export class MprisPlayer {
             this._canGoPrevious = props['CanGoPrevious'];
         if ('Position' in props)
             this._position = props['Position'];
+        if ('Volume' in props)
+            this._volume = props['Volume'];
     }
 
     _onPropertiesChanged(_conn, _sender, _path, _iface, _signal, params) {
         try {
             const [, changedProps] = params.recursiveUnpack();
-            const hadMetadata = !!this._metadata?.title;
             this._applyProps(changedProps);
 
             if ('Metadata' in changedProps)
                 this.onMetadataChanged?.(this._metadata);
             if ('PlaybackStatus' in changedProps)
                 this.onPlaybackStatusChanged?.(this._playbackStatus);
+            if ('Volume' in changedProps)
+                this.onVolumeChanged?.(this._volume);
         } catch (e) {
             logError(e, 'MprisPlayer._onPropertiesChanged');
         }
@@ -186,6 +180,26 @@ export class MprisPlayer {
     playPause() { this._callPlayer('PlayPause'); }
     next()      { this._callPlayer('Next'); }
     previous()  { this._callPlayer('Previous'); }
+
+    setVolume(level) {
+        // level is 0.0 to 1.0
+        const clamped = Math.max(0, Math.min(1, level));
+        Gio.DBus.session.call(
+            this._busName,
+            '/org/mpris/MediaPlayer2',
+            'org.freedesktop.DBus.Properties',
+            'Set',
+            new GLib.Variant('(ssv)', [
+                'org.mpris.MediaPlayer2.Player',
+                'Volume',
+                new GLib.Variant('d', clamped),
+            ]),
+            null,
+            Gio.DBusCallFlags.NONE,
+            -1, null, null
+        );
+        this._volume = clamped;
+    }
 
     raise() {
         Gio.DBus.session.call(
@@ -218,6 +232,7 @@ export class MprisPlayer {
     get isPlaying()       { return this._playbackStatus === 'Playing'; }
     get metadata()        { return this._metadata; }
     get position()        { return this._position; }
+    get volume()          { return this._volume; }
     get canGoNext()       { return this._canGoNext; }
     get canGoPrevious()   { return this._canGoPrevious; }
     get identity()        { return this._identity; }
@@ -259,13 +274,10 @@ export class MprisWatcher {
                 null, null
             );
             const names = result[0];
-            log(`[ytmusic] ListNames found ${names.length} names`);
             for (const name of names) {
-                log(`[ytmusic] checking: ${name} -> supported=${this._isSupportedBus(name)}`);
                 if (this._isSupportedBus(name))
                     await this._addPlayer(name);
             }
-            log(`[ytmusic] players after scan: ${[...this._players.keys()].join(', ') || 'none'}`);
         } catch (e) {
             logError(e, 'MprisWatcher.init');
         }
@@ -287,21 +299,8 @@ export class MprisWatcher {
 
     get activePlayer() {
         const all = [...this._players.values()];
-
-        // 1. A YTMusic player that is currently playing
-        const ytPlaying = all.find(p => this._isYTMusicPlayer(p) && p.isPlaying);
-        if (ytPlaying) return ytPlaying;
-
-        // 2. Any YTMusic player (paused but present)
-        const ytAny = all.find(p => this._isYTMusicPlayer(p));
-        if (ytAny) return ytAny;
-
-        // 3. Any player that is currently playing (fallback for non-YTMusic use)
-        const anyPlaying = all.find(p => p.isPlaying);
-        if (anyPlaying) return anyPlaying;
-
-        // 4. First available player
-        return all[0] ?? null;
+        // Prefer a player that is currently playing, fall back to first available
+        return all.find(p => p.isPlaying) ?? all[0] ?? null;
     }
 
     _isSupportedBus(name) {
@@ -311,24 +310,10 @@ export class MprisWatcher {
         return !IGNORED_BUS_PATTERNS.some(p => lower.includes(p.toLowerCase()));
     }
 
-    // A player is considered YouTube Music if its identity or bus name
-    // matches known patterns, covering the desktop app, PWA installs,
-    // and any browser hosting music.youtube.com.
-    _isYTMusicPlayer(player) {
-        const identity = player.identity.toLowerCase();
-        if (YTMUSIC_IDENTITY_PATTERNS.some(p => identity.includes(p)))
-            return true;
-        const bus = player.busName.toLowerCase();
-        if (YTMUSIC_BUS_PATTERNS.some(p => bus.includes(p)))
-            return true;
-        return false;
-    }
-
     async _addPlayer(busName) {
         if (this._players.has(busName)) return;
         const player = new MprisPlayer(busName);
         const ok = await player.init();
-        log(`[ytmusic] _addPlayer ${busName} -> ok=${ok} status=${player.playbackStatus} identity="${player.identity}" title="${player.metadata?.title}"`);
         if (!ok) return;
 
         // Re-notify when metadata changes so the indicator can re-evaluate

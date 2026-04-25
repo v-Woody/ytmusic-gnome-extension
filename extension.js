@@ -8,22 +8,18 @@ import { YTMusicIndicator } from './indicator.js';
 
 export default class YTMusicExtension extends Extension {
     enable() {
-        log('[ytmusic] extension enable() called');
-        try {
-            this._settings = this.getSettings();
-            log('[ytmusic] settings loaded');
-        } catch (e) {
-            logError(e, '[ytmusic] getSettings failed');
-            this._settings = null;
-        }
+        this._settings = this.getSettings();
         this._watcher = new MprisWatcher();
         this._indicator = new YTMusicIndicator(this._settings);
 
         Main.panel.addToStatusArea(this.uuid, this._indicator);
 
         this._watcher.onPlayerAdded = (player) => {
-            // Always prefer the most recently appeared player
-            this._indicator.setPlayer(player);
+            this._indicator.setPlayer(this._watcher.activePlayer);
+        };
+        
+        this._indicator._card.onVolume = (level) => {
+            this._watcher.activePlayer?.setVolume(level);
         };
 
         this._watcher.onPlayerRemoved = (_busName) => {
