@@ -307,6 +307,15 @@ class PopupCard extends PopupMenu.PopupBaseMenuItem {
         this._updateVolIcon();
     }
 
+    setVolumeEnabled(enabled) {
+        this._volumeSlider.reactive = enabled;
+        this._volumeSlider.can_focus = enabled;
+        this._volumeSlider.opacity = enabled ? 255 : 100;
+        this._volIcon.opacity = enabled ? 255 : 100;
+        if (!enabled)
+            this._volIcon.icon_name = 'audio-volume-muted-symbolic';
+    }
+
     update(metadata, playbackStatus, positionMicros, volume) {
         if (!metadata) {
             this._titleLabel.text = 'Not playing';
@@ -413,10 +422,10 @@ class YTMusicIndicator extends PanelMenu.Button {
     }
 
     setPlayer(player) {
-        // Disconnect old player signals
-        if (this._metaChangedId && this._player) {
+        if (this._player) {
             this._player.onMetadataChanged = null;
             this._player.onPlaybackStatusChanged = null;
+            this._player.onVolumeChanged = null;
         }
 
         this._player = player;
@@ -425,6 +434,13 @@ class YTMusicIndicator extends PanelMenu.Button {
             player.onMetadataChanged = () => this._refresh();
             player.onPlaybackStatusChanged = () => this._refresh();
             player.onVolumeChanged = (vol) => this._card.setVolume(vol);
+
+            // Probe whether this player supports volume control
+            player.probeVolumeControl().then(supported => {
+                this._card.setVolumeEnabled(supported);
+            }).catch(() => this._card.setVolumeEnabled(false));
+        } else {
+            this._card.setVolumeEnabled(false);
         }
 
         this._refresh();
