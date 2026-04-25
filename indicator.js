@@ -12,6 +12,10 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+// Promisify Gio async file loading
+Gio._promisify(Gio.File.prototype, 'load_contents_async', 'load_contents_finish');
+Gio._promisify(GdkPixbuf.Pixbuf, 'new_from_stream_at_scale_async', 'new_from_stream_at_scale_finish');
+
 const MARQUEE_SPEED = 40;         // pixels per second
 const MARQUEE_PAUSE_MS = 2000;    // pause at each end before scrolling back
 const MAX_TITLE_WIDTH = 200;      // px, clips title before scrolling kicks in
@@ -73,15 +77,24 @@ class AlbumArt extends St.Bin {
         }
 
         try {
-            // Download image bytes via Gio
             const file = Gio.File.new_for_uri(url);
-            const [, bytes] = await file.load_bytes_async(null);
 
+            // Load raw bytes
+            const [contents] = await file.load_contents_async(null);
+            const bytes = GLib.Bytes.new(contents);
+
+            // Decode into pixbuf via async stream
             const stream = Gio.MemoryInputStream.new_from_bytes(bytes);
-            const pixbuf = GdkPixbuf.Pixbuf.new_from_stream_at_scale(
+            const pixbuf = await GdkPixbuf.Pixbuf.new_from_stream_at_scale_async(
                 stream, ART_SIZE, ART_SIZE, true, null
             );
 
+            if (!pixbuf) {
+                this._placeholder();
+                return;
+            }
+
+            // Build a Clutter.Image and display it
             const image = new Clutter.Image();
             image.set_bytes(
                 pixbuf.get_pixels(),
@@ -93,15 +106,15 @@ class AlbumArt extends St.Bin {
                 pixbuf.get_rowstride()
             );
 
-            const texture = new Clutter.Actor({
+            const canvas = new Clutter.Actor({
                 width: ART_SIZE,
                 height: ART_SIZE,
                 content: image,
-                content_gravity: Clutter.ContentGravity.RESIZE_ASPECT,
             });
 
-            this.child = texture;
+            this.child = canvas;
         } catch (e) {
+            logError(e, 'AlbumArt.setUrl');
             this._placeholder();
         }
     }

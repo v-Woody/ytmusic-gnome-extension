@@ -259,10 +259,13 @@ export class MprisWatcher {
                 null, null
             );
             const names = result[0];
+            log(`[ytmusic] ListNames found ${names.length} names`);
             for (const name of names) {
+                log(`[ytmusic] checking: ${name} -> supported=${this._isSupportedBus(name)}`);
                 if (this._isSupportedBus(name))
                     await this._addPlayer(name);
             }
+            log(`[ytmusic] players after scan: ${[...this._players.keys()].join(', ') || 'none'}`);
         } catch (e) {
             logError(e, 'MprisWatcher.init');
         }
@@ -325,6 +328,7 @@ export class MprisWatcher {
         if (this._players.has(busName)) return;
         const player = new MprisPlayer(busName);
         const ok = await player.init();
+        log(`[ytmusic] _addPlayer ${busName} -> ok=${ok} status=${player.playbackStatus} identity="${player.identity}" title="${player.metadata?.title}"`);
         if (!ok) return;
 
         // Re-notify when metadata changes so the indicator can re-evaluate

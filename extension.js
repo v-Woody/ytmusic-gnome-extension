@@ -8,7 +8,14 @@ import { YTMusicIndicator } from './indicator.js';
 
 export default class YTMusicExtension extends Extension {
     enable() {
-        this._settings = this.getSettings();
+        log('[ytmusic] extension enable() called');
+        try {
+            this._settings = this.getSettings();
+            log('[ytmusic] settings loaded');
+        } catch (e) {
+            logError(e, '[ytmusic] getSettings failed');
+            this._settings = null;
+        }
         this._watcher = new MprisWatcher();
         this._indicator = new YTMusicIndicator(this._settings);
 
