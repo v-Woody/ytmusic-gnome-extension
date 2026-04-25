@@ -81,4 +81,4 @@ Pull requests are welcome. Please open an issue first for larger changes.
 
 ## License
 
-MIT
+GPL-3.0
