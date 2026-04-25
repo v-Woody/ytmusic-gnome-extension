@@ -11,6 +11,7 @@ import Cogl from 'gi://Cogl';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as Slider from 'resource:///org/gnome/shell/ui/slider.js';
 
 // Promisify Gio async file loading
 Gio._promisify(Gio.File.prototype, 'load_contents_async', 'load_contents_finish');
@@ -240,37 +241,24 @@ class PopupCard extends PopupMenu.PopupBaseMenuItem {
             x_expand: true,
         });
 
-        const volIcon = new St.Icon({
+        this._volIcon = new St.Icon({
             icon_name: 'audio-volume-medium-symbolic',
             icon_size: 16,
             style_class: 'ytmusic-volume-icon',
         });
 
-        this._volumeSlider = new St.Widget({
-            style_class: 'ytmusic-progress-container',
-            x_expand: true,
-            reactive: true,
+        this._volumeSlider = new Slider.Slider(1.0);
+        this._volumeSlider.x_expand = true;
+        this._settingVolume = false;
+        this._volumeSlider.connect('notify::value', () => {
+            this._updateVolIcon();
+            if (!this._settingVolume)
+                this.onVolume?.(this._volumeSlider.value);
         });
-        this._volumeTrack = new St.Widget({ style_class: 'ytmusic-progress-track' });
-        this._volumeFill = new St.Widget({ style_class: 'ytmusic-volume-fill' });
-        this._volumeTrack.add_child(this._volumeFill);
-        this._volumeSlider.add_child(this._volumeTrack);
 
-        this._volumeSlider.connect('button-press-event', (_actor, event) => {
-            this._onVolumeClick(event);
-            return Clutter.EVENT_STOP;
-        });
-        this._volumeSlider.connect('motion-event', (_actor, event) => {
-            if (event.get_state() & Clutter.ModifierType.BUTTON1_MASK)
-                this._onVolumeClick(event);
-            return Clutter.EVENT_PROPAGATE;
-        });
-        this._volumeTrack.connect('notify::width', () => this._updateVolumeFill());
-
-        volumeRow.add_child(volIcon);
+        volumeRow.add_child(this._volIcon);
         volumeRow.add_child(this._volumeSlider);
         box.add_child(volumeRow);
-
         this.add_child(box);
 
         // Callbacks wired by extension.js
@@ -278,8 +266,6 @@ class PopupCard extends PopupMenu.PopupBaseMenuItem {
         this.onNext = null;
         this.onPrevious = null;
         this.onVolume = null;
-
-        this._volumeLevel = 1.0;
 
         this._prevBtn.connect('clicked', () => this.onPrevious?.());
         this._playBtn.connect('clicked', () => this.onPlayPause?.());
@@ -300,42 +286,25 @@ class PopupCard extends PopupMenu.PopupBaseMenuItem {
         return btn;
     }
 
-    _onVolumeClick(event) {
-        const [absX] = event.get_coords();
-        const [trackX] = this._volumeTrack.get_transformed_position();
-        const trackW = this._volumeTrack.width;
-        if (trackW <= 0) return;
-        const fraction = Math.max(0, Math.min(1, (absX - trackX) / trackW));
-        this._volumeLevel = fraction;
-        this._updateVolumeFill();
-        this.onVolume?.(fraction);
-    }
-
-    _updateVolumeFill() {
-        const w = this._volumeTrack.width;
-        this._volumeFill.width = w * this._volumeLevel;
+    _updateVolIcon() {
+        const v = this._volumeSlider.value;
+        let name;
+        if (v === 0)
+            name = 'audio-volume-muted-symbolic';
+        else if (v < 0.4)
+            name = 'audio-volume-low-symbolic';
+        else if (v < 0.7)
+            name = 'audio-volume-medium-symbolic';
+        else
+            name = 'audio-volume-high-symbolic';
+        this._volIcon.icon_name = name;
     }
 
     setVolume(level) {
-        this._volumeLevel = Math.max(0, Math.min(1, level));
-        this._updateVolumeFill();
-
-        // Update icon based on level
-        let iconName;
-        if (this._volumeLevel === 0)
-            iconName = 'audio-volume-muted-symbolic';
-        else if (this._volumeLevel < 0.4)
-            iconName = 'audio-volume-low-symbolic';
-        else if (this._volumeLevel < 0.7)
-            iconName = 'audio-volume-medium-symbolic';
-        else
-            iconName = 'audio-volume-high-symbolic';
-
-        // Find the volume icon (first child of volume row)
-        const volumeRow = this._volumeSlider.get_parent();
-        const icon = volumeRow?.get_first_child();
-        if (icon instanceof St.Icon)
-            icon.icon_name = iconName;
+        this._settingVolume = true;
+        this._volumeSlider.value = Math.max(0, Math.min(1, level));
+        this._settingVolume = false;
+        this._updateVolIcon();
     }
 
     update(metadata, playbackStatus, positionMicros, volume) {
